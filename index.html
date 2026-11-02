@@ -241,6 +241,9 @@
     setStatus('Validando código en Google…');
     try{
       const result=await googleRpc('escaneo',{evento:eventSelect.value,codigo:raw});
+      if(!result || result.estado!=='ACEPTADA') {
+        throw new Error('Google todavía utiliza la versión anterior. Publica el Code.gs actualizado para guardar asistencias oficiales.');
+      }
       found.set(id,{id:result.nombre+' · '+id,time:new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'})});
       renderReadings();
       setStatus(result.duplicado?'Esta asistencia ya estaba registrada.':'Asistencia registrada correctamente. Listo para el siguiente gafete.','ok');
