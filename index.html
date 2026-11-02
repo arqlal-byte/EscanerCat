@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#671e32">
+  <title>EscanerCat · Prueba de lector</title>
+  <style>
+    :root{font-family:Arial,Helvetica,sans-serif;color:#352a2b;background:#f4efe6;font-size:18px}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;background:#f4efe6;font-size:18px}
+    header{background:#671e32;color:#fff;padding:26px 20px 22px;border-bottom:5px solid #c3a06b}
+    .head{max-width:650px;margin:auto}
+    .eyebrow{font-size:16px;font-weight:700;letter-spacing:.07em;opacity:.86}
+    header h1{font-size:35px;line-height:1.1;margin:9px 0 5px}
+    header p{font-size:17px;margin:0;line-height:1.4;color:#f5e8e7}
+    main{max-width:650px;margin:0 auto;padding:22px 16px 65px}
+    .card{background:#fff;border:1px solid #e6ddd0;border-radius:20px;padding:22px 20px;box-shadow:0 5px 25px #35221a0b}
+    .section-title{font-size:27px;line-height:1.18;margin:0 0 9px;color:#512235}
+    .sub{font-size:17px;line-height:1.48;color:#63575a;margin:0 0 24px}
+    label{display:block;font-weight:700;font-size:18px;margin:0 0 9px}
+    select{font:inherit;width:100%;min-height:56px;appearance:auto;color:#292020;border:2px solid #a99995;border-radius:12px;background:#fff;padding:11px 13px}
+    button{font:inherit;font-weight:700;border-radius:13px;cursor:pointer;min-height:54px;padding:12px 16px}
+    button:disabled{opacity:.6;cursor:default}
+    .primary{width:100%;margin-top:20px;background:#671e32;border:2px solid #671e32;color:#fff}
+    .secondary{border:2px solid #671e32;color:#671e32;background:#fff}
+    .muted{font-size:16px;line-height:1.5;color:#685e5c;margin:17px 0 0}
+    .pill{display:inline-block;background:#f8e9d4;border:1px solid #ddbf90;color:#6c481b;border-radius:999px;font-size:16px;font-weight:bold;padding:6px 12px;margin-bottom:18px}
+    .bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
+    .bar h2{font-size:22px;margin:0;line-height:1.3;flex:1;min-width:160px;overflow-wrap:anywhere}
+    .bar button{min-height:46px;font-size:16px;padding:8px 12px}
+    #reader{width:100%;min-height:280px;background:#1b1b1b;border-radius:16px;overflow:hidden;border:3px solid #d4bd93}
+    #reader video{object-fit:cover}
+    #reader img{max-width:100%}
+    .status{font-size:17px;line-height:1.45;padding:13px 16px;margin:14px 0;border-radius:11px;background:#f3ede7;color:#5c4f50}
+    .status.ok{background:#e2f3e9;color:#175d36}
+    .status.error{background:#ffe5e3;color:#96312c}
+    .last{border:2px solid #a3c7b0;background:#f2faf4;border-radius:14px;padding:15px;margin-bottom:14px}
+    .last h3{font-size:21px;margin:0 0 7px;color:#1b5d36}
+    .code{font-size:26px;font-weight:800;overflow-wrap:anywhere;margin:6px 0}
+    .label-muted{font-size:16px;color:#655e5e}
+    .count{font-size:20px;margin:18px 0 7px;font-weight:800}
+    #history{padding-left:23px;margin:8px 0 0}
+    #history li{font-size:17px;line-height:1.5;margin:7px 0;overflow-wrap:anywhere}
+    .reset{margin-top:20px;min-height:45px;border:1px solid #aaa;color:#533a42;background:#fff;font-size:16px}
+    [hidden]{display:none!important}
+    @media(max-width:370px){header h1{font-size:31px}.card{padding:19px 15px}}
+  </style>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+</head>
+<body>
+  <header>
+    <div class="head">
+      <div class="eyebrow">LECTOR DE PRUEBA</div>
+      <h1>EscanerCat</h1>
+      <p>Escáner de QR y códigos de barras</p>
+    </div>
+  </header>
+  <main>
+    <section id="event-screen" class="card" aria-label="Seleccionar evento">
+      <span class="pill">Sin registros reales</span>
+      <h2 class="section-title">Seleccionar evento</h2>
+      <p class="sub">Elige el evento y después abre la cámara.</p>
+      <label for="event-select">Evento</label>
+      <select id="event-select">
+        <option value="prueba-catequesis">Prueba de Iniciación Cristiana</option>
+        <option value="prueba-gafetes">Prueba de gafetes y códigos de barras</option>
+      </select>
+      <button id="start-button" class="primary" type="button">Abrir escáner</button>
+      <p class="muted">Estas actividades son de prueba. Ninguna lectura se enviará a Google todavía.</p>
+    </section>
+
+    <section id="scanner-screen" hidden aria-label="Escáner">
+      <div class="bar">
+        <h2 id="selected-event"></h2>
+        <button id="back-button" class="secondary" type="button">Cambiar evento</button>
+      </div>
+      <div id="reader" aria-label="Vista de la cámara"></div>
+      <p id="status" class="status" role="status" aria-live="polite">Preparando la cámara...</p>
+      <section id="last-reading" class="last" hidden aria-live="polite">
+        <h3>Código leído</h3>
+        <p id="last-code" class="code"></p>
+        <div id="last-format" class="label-muted"></div>
+      </section>
+      <div id="count" class="count">0 códigos distintos</div>
+      <ol id="history"></ol>
+      <button id="clear-button" class="reset" type="button">Limpiar lecturas de prueba</button>
+      <p class="muted">El lector permanece activo. Un gafete repetido no aumenta el contador.</p>
+    </section>
+  </main>
+
+<script>
+(function(){
+  'use strict';
+
+  const eventScreen = document.getElementById('event-screen');
+  const scannerScreen = document.getElementById('scanner-screen');
+  const eventSelect = document.getElementById('event-select');
+  const selectedEvent = document.getElementById('selected-event');
+  const startButton = document.getElementById('start-button');
+  const backButton = document.getElementById('back-button');
+  const clearButton = document.getElementById('clear-button');
+  const statusBox = document.getElementById('status');
+  const lastReading = document.getElementById('last-reading');
+  const lastCode = document.getElementById('last-code');
+  const lastFormat = document.getElementById('last-format');
+  const count = document.getElementById('count');
+  const history = document.getElementById('history');
+
+  let scanner = null;
+  let isStarting = false;
+  let isRunning = false;
+  let cooldownUntil = 0;
+  const found = new Map();
+
+  function setStatus(message,type){
+    statusBox.textContent = message;
+    statusBox.className = 'status' + (type ? ' ' + type : '');
+  }
+
+  function getIdentifier(raw){
+    const value = String(raw || '').trim();
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value)){
+      try{
+        const url = new URL(value);
+        for (const key of ['persona','nomina','nómina','empleado','codigo','id']){
+          const id = url.searchParams.get(key);
+          if (id) return id.trim();
+        }
+      }catch(e){}
+    }
+    if (value.charAt(0) === '{'){
+      try{
+        const object = JSON.parse(value);
+        for (const key of ['persona','nomina','nómina','empleado','codigo','id']){
+          if (object[key] !== undefined && object[key] !== null) return String(object[key]).trim();
+        }
+      }catch(e){}
+    }
+    return value;
+  }
+
+  function renderReadings(){
+    const entries = Array.from(found.values());
+    count.textContent = entries.length + (entries.length === 1 ? ' código distinto' : ' códigos distintos');
+    history.replaceChildren();
+    entries.slice(-8).reverse().forEach(function(item){
+      const li = document.createElement('li');
+      li.textContent = item.id + ' · ' + item.time;
+      history.appendChild(li);
+    });
+  }
+
+  function onRead(raw,decoded){
+    if (Date.now() < cooldownUntil) return;
+    cooldownUntil = Date.now() + 1500;
+    const id = getIdentifier(raw);
+    if (!id) return;
+    const format = decoded && decoded.result && decoded.result.format && decoded.result.format.formatName || 'QR / barras';
+    lastReading.hidden = false;
+    lastCode.textContent = id.length > 100 ? id.slice(0,100) + '…' : id;
+    lastFormat.textContent = 'Formato: ' + format;
+    if (found.has(id)){
+      setStatus('Este código ya se leyó en esta prueba.','');
+      return;
+    }
+    found.set(id,{id:id,time:new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'})});
+    renderReadings();
+    setStatus('Lectura correcta. Listo para el siguiente gafete.','ok');
+    if ('vibrate' in navigator) navigator.vibrate(110);
+  }
+
+  async function start(){
+    if (isStarting || isRunning) return;
+    isStarting = true;
+    startButton.disabled = true;
+    eventScreen.hidden = true;
+    scannerScreen.hidden = false;
+    selectedEvent.textContent = eventSelect.options[eventSelect.selectedIndex].text;
+    found.clear();
+    renderReadings();
+    lastReading.hidden = true;
+    setStatus('Solicitando acceso a la cámara...');
+    if (!window.Html5Qrcode || !window.Html5QrcodeSupportedFormats){
+      setStatus('No se pudo cargar el lector. Revisa la conexión a internet y vuelve a intentar.','error');
+      startButton.disabled = false;
+      isStarting = false;
+      return;
+    }
+    try {
+      const formats = window.Html5QrcodeSupportedFormats;
+      scanner = new Html5Qrcode('reader',{
+        formatsToSupport:[
+          formats.QR_CODE,formats.CODE_128,formats.CODE_39,
+          formats.EAN_13,formats.EAN_8,formats.UPC_A,
+          formats.UPC_E,formats.ITF,formats.CODABAR
+        ],
+        verbose:false
+      });
+      await scanner.start(
+        {facingMode:'environment'},
+        {
+          fps:12,
+          qrbox:function(width,height){
+            const side = Math.max(155,Math.min(Math.floor(width*.82),Math.floor(height*.66),300));
+            return {width:side,height:side};
+          },
+          aspectRatio:1.333334,
+          disableFlip:false
+        },
+        onRead,
+        function(){}
+      );
+      isRunning = true;
+      setStatus('Cámara lista. Acerca el código del gafete.');
+    }catch(err){
+      setStatus('No se pudo abrir la cámara. Verifica el permiso del navegador y que el sitio esté abierto con HTTPS.','error');
+      const el = document.getElementById('reader');
+      el.replaceChildren();
+      scanner = null;
+    }finally{
+      isStarting = false;
+      startButton.disabled = false;
+    }
+  }
+
+  async function back(){
+    backButton.disabled = true;
+    try {
+      if (scanner){
+        if (isRunning) await scanner.stop();
+        try {scanner.clear();} catch(e){}
+      }
+    }catch(e){}finally{
+      scanner = null;
+      isRunning = false;
+      scannerScreen.hidden = true;
+      eventScreen.hidden = false;
+      backButton.disabled = false;
+    }
+  }
+
+  startButton.addEventListener('click',start);
+  backButton.addEventListener('click',back);
+  clearButton.addEventListener('click',function(){
+    found.clear();
+    lastReading.hidden=true;
+    renderReadings();
+    setStatus('Lista de prueba vacía. Cámara lista.');
+  });
+  window.addEventListener('pagehide',function(){
+    if(scanner && isRunning) scanner.stop().catch(function(){});
+  });
+})();
+</script>
+</body>
+</html>
