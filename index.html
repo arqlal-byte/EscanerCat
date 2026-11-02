@@ -203,8 +203,10 @@
         {
           fps:12,
           qrbox:function(width,height){
-            const side = Math.max(155,Math.min(Math.floor(width*.82),Math.floor(height*.66),300));
-            return {width:side,height:side};
+            return {
+              width: Math.max(130, Math.floor(width * .87)),
+              height: Math.max(100, Math.floor(height * .70))
+            };
           },
           aspectRatio:1.333334,
           disableFlip:false
