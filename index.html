@@ -43,6 +43,8 @@
     #history{padding-left:23px;margin:8px 0 0}
     #history li{font-size:17px;line-height:1.5;margin:7px 0;overflow-wrap:anywhere}
     .reset{margin-top:20px;min-height:45px;border:1px solid #aaa;color:#533a42;background:#fff;font-size:16px}
+    input{display:block;width:100%;font:inherit;min-height:52px;border:2px solid #a99995;border-radius:12px;padding:11px 13px;margin-bottom:13px}
+    .auth-status{margin-top:14px;font-size:16px;color:#8d2a28}
     [hidden]{display:none!important}
     @media(max-width:370px){header h1{font-size:31px}.card{padding:19px 15px}}
   </style>
@@ -57,8 +59,18 @@
     </div>
   </header>
   <main>
+    <section id="auth-screen" class="card" hidden aria-label="Iniciar sesión">
+      <h2 class="section-title">Acceso de encargados</h2>
+      <p class="sub">Ingresa con tu cuenta de Administración para consultar las reuniones activas.</p>
+      <form id="auth-form">
+        <label for="admin-email">Correo autorizado</label><input id="admin-email" type="email" autocomplete="username" required>
+        <label for="admin-password">Contraseña</label><input id="admin-password" type="password" autocomplete="current-password" required>
+        <button class="primary" type="submit">Consultar reuniones</button>
+      </form>
+      <p id="auth-status" class="auth-status" role="status"></p>
+    </section>
     <section id="event-screen" class="card" aria-label="Seleccionar evento">
-      <span class="pill">Sin registros reales</span>
+      <span class="pill" id="mode-label">MODO PRUEBA</span>
       <h2 class="section-title">Seleccionar evento</h2>
       <p class="sub">Elige el evento y después abre la cámara.</p>
       <label for="event-select">Evento</label>
@@ -67,7 +79,7 @@
         <option value="prueba-gafetes">Prueba de gafetes y códigos de barras</option>
       </select>
       <button id="start-button" class="primary" type="button">Abrir escáner</button>
-      <p class="muted">Estas actividades son de prueba. Ninguna lectura se enviará a Google todavía.</p>
+      <p class="muted" id="modo-ayuda">Estas actividades son de prueba. Ninguna lectura se enviará a Google todavía.</p>
     </section>
 
     <section id="scanner-screen" hidden aria-label="Escáner">
@@ -107,6 +119,9 @@
   const count = document.getElementById('count');
   const history = document.getElementById('history');
 
+  const apiCandidate = new URLSearchParams(location.search).get('api') || '';
+  const api = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(apiCandidate) ? apiCandidate : '';
+  let authToken = '', sending = false;
   let scanner = null;
   let isStarting = false;
   let isRunning = false;
@@ -152,9 +167,72 @@
     });
   }
 
-  function onRead(raw,decoded){
-    if (Date.now() < cooldownUntil) return;
-    cooldownUntil = Date.now() + 1500;
+
+  // Apps Script recibe POST en modo no-cors y devuelve el resultado por consulta
+  // JSONP con identificador aleatorio de 128 bits. Nunca enviamos contraseñas en URL.
+  function randomId(){
+    const values=new Uint8Array(16);crypto.getRandomValues(values);
+    return [...values].map(x=>x.toString(16).padStart(2,'0')).join('');
+  }
+  function fetchResult(rid,timeoutMs=12000){
+    return new Promise((resolve,reject)=>{
+      const name='escResult_'+rid;
+      const until=Date.now()+timeoutMs;
+      let element=null,timer=null,done=false;
+      const cleanup=()=>{done=true;if(element)element.remove();if(timer)clearTimeout(timer);delete window[name];};
+      const attempt=()=>{
+        if(done)return;
+        if(Date.now()>until){cleanup();reject(new Error('Google no devolvió una respuesta. Revisa el despliegue.'));return;}
+        const sc=document.createElement('script');element=sc;
+        window[name]=res=>{
+          sc.remove();element=null;
+          if(!res || !res.listo){timer=setTimeout(attempt,650);return;}
+          cleanup();
+          if(res.dato?.ok)resolve(res.dato.resultado);
+          else reject(new Error(res.dato?.error || 'Google rechazó la operación.'));
+        };
+        sc.onerror=()=>{sc.remove();element=null;timer=setTimeout(attempt,700);};
+        sc.src=api+'?scanner_result='+rid+'&callback='+name+'&t='+Date.now();
+        document.head.appendChild(sc);
+      };
+      attempt();
+    });
+  }
+  async function googleRpc(op,params={}){
+    if(!api)throw new Error('No hay un enlace de Google configurado.');
+    const rid=randomId();
+    await fetch(api,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=UTF-8'},
+      body:JSON.stringify({...params,op,rid})});
+    return fetchResult(rid);
+  }
+  async function conectar(e){
+    e.preventDefault();
+    const status=document.getElementById('auth-status');
+    const btn=document.querySelector('#auth-form button');
+    btn.disabled=true;status.textContent='Comprobando acceso…';
+    try{
+      const cred=await googleRpc('login',{email:document.getElementById('admin-email').value.trim(),clave:document.getElementById('admin-password').value});
+      document.getElementById('admin-password').value='';
+      authToken=cred.token;
+      const lista=await googleRpc('eventos',{token:authToken});
+      eventSelect.replaceChildren();
+      const opt=document.createElement('option');opt.value='';opt.textContent='Selecciona una reunión';eventSelect.append(opt);
+      for(const ev of lista){const o=document.createElement('option');o.value=ev.id;o.textContent=ev.nombre+' · '+ev.fecha+' '+ev.hora;eventSelect.append(o);}
+      startButton.disabled=true;
+      document.getElementById('auth-screen').hidden=true;
+      eventScreen.hidden=false;
+      document.getElementById('mode-label').textContent='GOOGLE · SOLO PRUEBAS';
+      document.getElementById('modo-ayuda').textContent=lista.length
+        ?'Las lecturas se envían a Google, únicamente a la hoja Escaner_Pruebas. No cuentan como asistencia oficial.'
+        :'No hay reuniones activas. Activa una reunión desde Administración y vuelve a entrar.';
+      if(!lista.length)startButton.disabled=true;
+    }catch(err){status.textContent=err?.message||String(err);}
+    finally{btn.disabled=false;}
+  }
+
+  async function onRead(raw,decoded){
+    if (sending || Date.now() < cooldownUntil) return;
+    cooldownUntil = Date.now() + 1800;
     const id = getIdentifier(raw);
     if (!id) return;
     const format = decoded && decoded.result && decoded.result.format && decoded.result.format.formatName || 'QR / barras';
@@ -162,19 +240,33 @@
     lastCode.textContent = id.length > 100 ? id.slice(0,100) + '…' : id;
     lastFormat.textContent = 'Formato: ' + format;
     if (found.has(id)){
-      setStatus('Este código ya se leyó en esta prueba.','');
+      setStatus('Este código ya se leyó en este evento.','');
       return;
     }
-    found.set(id,{id:id,time:new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'})});
-    renderReadings();
-    setStatus('Lectura correcta. Listo para el siguiente gafete.','ok');
-    if ('vibrate' in navigator) navigator.vibrate(110);
+    sending=true;
+    try{
+      let label=id,duplicate=false;
+      if(api){
+        if(!authToken)throw new Error('Vuelve a iniciar sesión para registrar las lecturas.');
+        setStatus('Consultando Google para validar el código…');
+        const resp=await googleRpc('escaneo',{token:authToken,evento:eventSelect.value,codigo:raw});
+        label=resp.nombre+' · '+id;
+        duplicate=Boolean(resp.duplicado);
+      }
+      found.set(id,{id:label,time:new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'})});
+      renderReadings();
+      setStatus(duplicate?'Este participante ya estaba en la lista de pruebas.':(api?'Registro guardado en Escaner_Pruebas.':'Lectura correcta. Listo para el siguiente gafete.'),'ok');
+      if ('vibrate' in navigator) navigator.vibrate(110);
+    }catch(err){setStatus('No registrado: '+(err?.message||String(err)),'error');}
+    finally{sending=false;}
+
   }
 
   async function start(){
     if (isStarting || isRunning) return;
     isStarting = true;
     startButton.disabled = true;
+    if (!eventSelect.value || (api && !authToken)) return;
     eventScreen.hidden = true;
     scannerScreen.hidden = false;
     selectedEvent.textContent = eventSelect.options[eventSelect.selectedIndex].text;
@@ -243,6 +335,12 @@
     }
   }
 
+  if (api){
+    document.getElementById('auth-screen').hidden=false;
+    eventScreen.hidden=true;
+    document.getElementById('auth-form').addEventListener('submit',conectar);
+  }
+  eventSelect.addEventListener('change',()=>{startButton.disabled=!eventSelect.value;});
   startButton.addEventListener('click',start);
   backButton.addEventListener('click',back);
   clearButton.addEventListener('click',function(){
