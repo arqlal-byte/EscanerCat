@@ -184,6 +184,46 @@
   let isRunning = false;
   let cooldownUntil = 0;
   let isSending = false;
+  let audioContext = null;
+  let lastSoundCode = '';
+  let lastSoundTime = 0;
+
+  function unlockAudio(){
+    try {
+      const AudioCtor=window.AudioContext||window.webkitAudioContext;
+      if(!AudioCtor)return;
+      if(!audioContext) audioContext=new AudioCtor();
+      if(audioContext.state==='suspended') audioContext.resume().catch(()=>{});
+    }catch(e){}
+  }
+
+  function soundResult(kind,code){
+    // No repetir el sonido mientras el mismo gafete permanece frente a la cámara.
+    const now=Date.now();
+    if(code===lastSoundCode && now-lastSoundTime<6500)return;
+    lastSoundCode=code;
+    lastSoundTime=now;
+    try{
+      if(!audioContext || audioContext.state!=='running')return;
+      const tones=kind==='ok' ? [[880,0,0.095],[1175,0.135,0.125]]
+                              : [[290,0,0.17],[210,0.19,0.19]];
+      const startTime=audioContext.currentTime+0.02;
+      for(const [frequency,offset,duration] of tones){
+        const oscillator=audioContext.createOscillator();
+        const volume=audioContext.createGain();
+        oscillator.type=kind==='ok'?'sine':'triangle';
+        oscillator.frequency.setValueAtTime(frequency,startTime+offset);
+        volume.gain.setValueAtTime(0.0001,startTime+offset);
+        volume.gain.exponentialRampToValueAtTime(0.12,startTime+offset+0.012);
+        volume.gain.exponentialRampToValueAtTime(0.0001,startTime+offset+duration);
+        oscillator.connect(volume);
+        volume.connect(audioContext.destination);
+        oscillator.start(startTime+offset);
+        oscillator.stop(startTime+offset+duration+0.012);
+        oscillator.onended=()=>{oscillator.disconnect();volume.disconnect();};
+      }
+    }catch(e){}
+  }
   const found = new Map();
 
   function setStatus(message,type){
@@ -235,7 +275,9 @@
     lastCode.textContent=id.length>100?id.slice(0,100)+'…':id;
     lastFormat.textContent='Formato: '+format;
     if(found.has(id)){
-      setStatus('Este código ya se leyó para esta reunión.');return;
+      setStatus('Este código ya se leyó para esta reunión.');
+      soundResult('error',id);
+      return;
     }
     isSending=true;
     setStatus('Validando código en Google…');
@@ -246,14 +288,19 @@
       }
       found.set(id,{id:result.nombre+' · '+id,time:new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'})});
       renderReadings();
-      setStatus(result.duplicado?'Esta asistencia ya estaba registrada.':'Asistencia registrada correctamente. Listo para el siguiente gafete.','ok');
+      setStatus(result.duplicado?'Esta asistencia ya estaba registrada.':'Asistencia registrada correctamente. Listo para el siguiente gafete.',result.duplicado?'error':'ok');
+      soundResult(result.duplicado?'error':'ok',id);
       if('vibrate' in navigator)navigator.vibrate(110);
-    }catch(e){setStatus('No se registró: '+(e?.message||String(e)),'error');}
+    }catch(e){
+      setStatus('No se registró: '+(e?.message||String(e)),'error');
+      soundResult('error',id);
+    }
     finally{isSending=false;}
   }
 
   async function start(){
     if (isStarting || isRunning || !eventSelect.value || !apiUrl) return;
+    unlockAudio();
     isStarting = true;
     startButton.disabled = true;
     eventScreen.hidden = true;
