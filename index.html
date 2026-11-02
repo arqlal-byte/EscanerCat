@@ -109,18 +109,9 @@
   // El botón de Administración entrega una vez la URL del servicio Apps Script.
   const connectionInfo=document.getElementById('connection-info');
   const retryEvents=document.getElementById('retry-events');
-  const params=new URLSearchParams(location.search);
-  let apiUrl=params.get('api')||'';
-  const validApi=url=>/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(url);
-  try{
-    if(validApi(apiUrl)){
-      localStorage.setItem('EscanerCat_regnumApi',apiUrl);
-      history.replaceState(null,'',location.pathname);
-    } else {
-      apiUrl=localStorage.getItem('EscanerCat_regnumApi')||'';
-    }
-  }catch(_){}
-  if(!validApi(apiUrl))apiUrl='';
+  // Dirección fija del servicio de reuniones de Regnum Christi.
+  // EscanerCat abre directamente sin depender del botón de Administración.
+  const apiUrl='https://script.google.com/macros/s/AKfycbzPfNBIEcurVYCPSch7hIFCN8tWxUVUpKK2hXi0GerfXKQc_CxYYgz28d-3Ry7Bb8_hwg/exec';
   function randomId(){
     const data=new Uint8Array(16);crypto.getRandomValues(data);
     return Array.from(data,x=>x.toString(16).padStart(2,'0')).join('');
@@ -164,7 +155,7 @@
     eventSelect.disabled=true;startButton.disabled=true;retryEvents.hidden=true;
     connectionInfo.textContent='Consultando reuniones de Google…';
     try{
-      if(!apiUrl)throw new Error('EscanerCat no conoce todavía la dirección de Google. Abre la aplicación de Administración y toca «Escanear asistencias (prueba)». No necesitas contraseña en EscanerCat.');
+      if(!apiUrl)throw new Error('No está configurado el servicio de reuniones.');
       const response=await requestJsonp('eventos',randomId());
       if(!response || !response.ok)throw new Error(response?.error||'Google no entregó las reuniones.');
       eventSelect.replaceChildren();
