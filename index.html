@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#671e32">
-  <title>EscanerCat · Prueba de lector</title>
+  <title>EscanerCat · Control de asistencias</title>
   <style>
     :root{font-family:Arial,Helvetica,sans-serif;color:#352a2b;background:#f4efe6;font-size:18px}
     *{box-sizing:border-box}
@@ -58,7 +58,7 @@
   </header>
   <main>
     <section id="event-screen" class="card" aria-label="Seleccionar evento">
-      <span class="pill">MODO DE PRUEBA · NO OFICIAL</span>
+      <span class="pill">REGISTRO DE ASISTENCIA</span>
       <h2 class="section-title">Seleccionar evento</h2>
       <p class="sub">Selecciona una reunión creada en Administración y después abre la cámara.</p>
       <label for="event-select">Evento</label>
@@ -82,8 +82,8 @@
       </section>
       <div id="count" class="count">0 códigos distintos</div>
       <ol id="history"></ol>
-      <button id="clear-button" class="reset" type="button">Limpiar lecturas de prueba</button>
-      <p class="muted">El lector permanece activo. Un gafete repetido no aumenta el contador.</p>
+      <button id="clear-button" class="reset" type="button">Limpiar historial en pantalla</button>
+      <p class="muted">El lector permanece activo. Un gafete repetido no aumenta el contador. Limpiar el historial en pantalla no borra las asistencias.</p>
     </section>
   </main>
 
@@ -169,7 +169,7 @@
       }
       if(!meetings.length)throw new Error('Google respondió correctamente, pero la hoja Sesiones no contiene reuniones. Comprueba que el despliegue corresponda a la misma aplicación que usas en Administración.');
       eventSelect.disabled=false;
-      connectionInfo.textContent='Se encontraron '+meetings.length+' reuniones reales. Las lecturas se guardan únicamente en Escaner_Pruebas.';
+      connectionInfo.textContent='Se encontraron '+meetings.length+' reuniones. Selecciona una para registrar asistencias.';
     }catch(e){
       eventSelect.replaceChildren();
       const option=document.createElement('option');option.value='';
@@ -243,7 +243,7 @@
       const result=await googleRpc('escaneo',{evento:eventSelect.value,codigo:raw});
       found.set(id,{id:result.nombre+' · '+id,time:new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'})});
       renderReadings();
-      setStatus(result.duplicado?'Este participante ya estaba en Escaner_Pruebas.':'Lectura registrada en Escaner_Pruebas. Listo para el siguiente gafete.','ok');
+      setStatus(result.duplicado?'Esta asistencia ya estaba registrada.':'Asistencia registrada correctamente. Listo para el siguiente gafete.','ok');
       if('vibrate' in navigator)navigator.vibrate(110);
     }catch(e){setStatus('No se registró: '+(e?.message||String(e)),'error');}
     finally{isSending=false;}
@@ -330,7 +330,7 @@
     found.clear();
     lastReading.hidden=true;
     renderReadings();
-    setStatus('Lista de prueba vacía. Cámara lista.');
+    setStatus('Historial en pantalla limpio. Las asistencias guardadas se conservan.');
   });
   window.addEventListener('pagehide',function(){
     if(scanner && isRunning) scanner.stop().catch(function(){});
