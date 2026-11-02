@@ -51,23 +51,20 @@
 <body>
   <header>
     <div class="head">
-      <div class="eyebrow">LECTOR DE PRUEBA</div>
+      <div class="eyebrow">ESCÁNER DE ASISTENCIAS</div>
       <h1>EscanerCat</h1>
       <p>Escáner de QR y códigos de barras</p>
     </div>
   </header>
   <main>
     <section id="event-screen" class="card" aria-label="Seleccionar evento">
-      <span class="pill">Sin registros reales</span>
+      <span class="pill">MODO DE PRUEBA · NO OFICIAL</span>
       <h2 class="section-title">Seleccionar evento</h2>
-      <p class="sub">Elige el evento y después abre la cámara.</p>
+      <p class="sub">Selecciona una reunión creada en Administración y después abre la cámara.</p>
       <label for="event-select">Evento</label>
-      <select id="event-select">
-        <option value="prueba-catequesis">Prueba de Iniciación Cristiana</option>
-        <option value="prueba-gafetes">Prueba de gafetes y códigos de barras</option>
-      </select>
-      <button id="start-button" class="primary" type="button">Abrir escáner</button>
-      <p class="muted">Estas actividades son de prueba. Ninguna lectura se enviará a Google todavía.</p>
+      <select id="event-select" disabled><option value="">Consultando reuniones de Google…</option></select>
+      <button id="start-button" class="primary" type="button" disabled>Abrir escáner</button>
+      <p class="muted" id="connection-info">Conectando con las reuniones existentes en Google…</p>
     </section>
 
     <section id="scanner-screen" hidden aria-label="Escáner">
@@ -107,10 +104,89 @@
   const count = document.getElementById('count');
   const history = document.getElementById('history');
 
+  // GitHub Pages aloja únicamente la interfaz. El enlace permanece el mismo.
+  // El botón de Administración entrega una vez la URL del servicio Apps Script.
+  const connectionInfo=document.getElementById('connection-info');
+  const params=new URLSearchParams(location.search);
+  let apiUrl=params.get('api')||'';
+  const validApi=url=>/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(url);
+  try{
+    if(validApi(apiUrl)){
+      localStorage.setItem('EscanerCat_regnumApi',apiUrl);
+      history.replaceState(null,'',location.pathname);
+    } else {
+      apiUrl=localStorage.getItem('EscanerCat_regnumApi')||'';
+    }
+  }catch(_){}
+  if(!validApi(apiUrl))apiUrl='';
+  function randomId(){
+    const data=new Uint8Array(16);crypto.getRandomValues(data);
+    return Array.from(data,x=>x.toString(16).padStart(2,'0')).join('');
+  }
+  function requestJsonp(op,id){
+    if(!apiUrl) return Promise.reject(new Error('Abre EscanerCat desde el botón de Administración para conectar con tus reuniones.'));
+    return new Promise((resolve,reject)=>{
+      const callback=(op==='eventos'?'escEvents_':'escResult_')+id;
+      const url=apiUrl+'?'+(op==='eventos'?'scanner_eventos=1':'scanner_result='+id)+'&callback='+callback+'&_='+Date.now();
+      const script=document.createElement('script');
+      let done=false,timer;
+      const complete=(err,info)=>{
+        if(done)return;done=true;clearTimeout(timer);script.remove();delete window[callback];
+        if(err)reject(err);else resolve(info);
+      };
+      window[callback]=(response)=>complete(null,response);
+      script.onerror=()=>complete(new Error('No se pudo conectar con Google.'));
+      timer=setTimeout(()=>complete(new Error('Google no respondió. Verifica que la aplicación esté publicada para cualquier persona.')),12000);
+      script.src=url;document.head.appendChild(script);
+    });
+  }
+  async function googleRpc(op,args){
+    const rid=randomId();
+    try{
+      await fetch(apiUrl,{method:'POST',mode:'no-cors',
+        headers:{'Content-Type':'text/plain;charset=UTF-8'},
+        body:JSON.stringify({...args,op,rid})});
+    }catch(e){throw new Error('No se pudo enviar la lectura a Google.');}
+    const until=Date.now()+15000;
+    while(Date.now()<until){
+      const answer=await requestJsonp('resultado',rid);
+      if(answer && answer.listo){
+        if(answer.dato && answer.dato.ok)return answer.dato.resultado;
+        throw new Error(answer.dato?.error || 'Google rechazó el registro.');
+      }
+      await new Promise(res=>setTimeout(res,650));
+    }
+    throw new Error('Google no confirmó el registro.');
+  }
+  async function loadRealEvents(){
+    eventSelect.disabled=true;startButton.disabled=true;
+    try{
+      if(!apiUrl)throw new Error('Para mostrar tus reuniones, abre EscanerCat desde el botón de Administración una vez.');
+      const response=await requestJsonp('eventos',randomId());
+      if(!response || !response.ok)throw new Error(response?.error||'Google no entregó las reuniones.');
+      eventSelect.replaceChildren();
+      const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Selecciona una reunión';eventSelect.append(placeholder);
+      const meetings=response.eventos||[];
+      for(const m of meetings){
+        const item=document.createElement('option');
+        item.value=String(m.id||'');
+        item.textContent=String(m.nombre||'Reunión')+' · '+String(m.fecha||'')+' '+String(m.hora||'')+(m.estado==='ACTIVA'?' · Activa':' · '+String(m.estado||''));
+        eventSelect.append(item);
+      }
+      if(!meetings.length)throw new Error('No se encontraron reuniones creadas en Administración.');
+      eventSelect.disabled=false;
+      connectionInfo.textContent='Se encontraron '+meetings.length+' reuniones reales. Las lecturas se guardan únicamente en Escaner_Pruebas.';
+    }catch(e){
+      eventSelect.replaceChildren();
+      const option=document.createElement('option');option.value='';option.textContent='No hay reuniones disponibles';eventSelect.append(option);
+      connectionInfo.textContent=e?.message||String(e);
+    }
+  }
   let scanner = null;
   let isStarting = false;
   let isRunning = false;
   let cooldownUntil = 0;
+  let isSending = false;
   const found = new Map();
 
   function setStatus(message,type){
@@ -152,27 +228,32 @@
     });
   }
 
-  function onRead(raw,decoded){
-    if (Date.now() < cooldownUntil) return;
-    cooldownUntil = Date.now() + 1500;
-    const id = getIdentifier(raw);
-    if (!id) return;
-    const format = decoded && decoded.result && decoded.result.format && decoded.result.format.formatName || 'QR / barras';
-    lastReading.hidden = false;
-    lastCode.textContent = id.length > 100 ? id.slice(0,100) + '…' : id;
-    lastFormat.textContent = 'Formato: ' + format;
-    if (found.has(id)){
-      setStatus('Este código ya se leyó en esta prueba.','');
-      return;
+  async function onRead(raw,decoded){
+    if (isSending || Date.now() < cooldownUntil) return;
+    cooldownUntil=Date.now()+1400;
+    const id=getIdentifier(raw);
+    if(!id)return;
+    const format=decoded && decoded.result && decoded.result.format && decoded.result.format.formatName || 'QR / barras';
+    lastReading.hidden=false;
+    lastCode.textContent=id.length>100?id.slice(0,100)+'…':id;
+    lastFormat.textContent='Formato: '+format;
+    if(found.has(id)){
+      setStatus('Este código ya se leyó para esta reunión.');return;
     }
-    found.set(id,{id:id,time:new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'})});
-    renderReadings();
-    setStatus('Lectura correcta. Listo para el siguiente gafete.','ok');
-    if ('vibrate' in navigator) navigator.vibrate(110);
+    isSending=true;
+    setStatus('Validando código en Google…');
+    try{
+      const result=await googleRpc('escaneo',{evento:eventSelect.value,codigo:raw});
+      found.set(id,{id:result.nombre+' · '+id,time:new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'})});
+      renderReadings();
+      setStatus(result.duplicado?'Este participante ya estaba en Escaner_Pruebas.':'Lectura registrada en Escaner_Pruebas. Listo para el siguiente gafete.','ok');
+      if('vibrate' in navigator)navigator.vibrate(110);
+    }catch(e){setStatus('No se registró: '+(e?.message||String(e)),'error');}
+    finally{isSending=false;}
   }
 
   async function start(){
-    if (isStarting || isRunning) return;
+    if (isStarting || isRunning || !eventSelect.value || !apiUrl) return;
     isStarting = true;
     startButton.disabled = true;
     eventScreen.hidden = true;
@@ -243,6 +324,8 @@
     }
   }
 
+  eventSelect.addEventListener('change',()=>{startButton.disabled=eventSelect.disabled||!eventSelect.value;});
+  loadRealEvents();
   startButton.addEventListener('click',start);
   backButton.addEventListener('click',back);
   clearButton.addEventListener('click',function(){
