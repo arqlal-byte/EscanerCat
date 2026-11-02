@@ -74,6 +74,7 @@
         <button id="back-button" class="secondary" type="button">Cambiar evento</button>
       </div>
       <div id="reader" aria-label="Vista de la cámara"></div>
+      <button id="test-sound" class="secondary" type="button" style="width:100%;margin-top:12px">🔊 Probar sonido</button>
       <p id="status" class="status" role="status" aria-live="polite">Preparando la cámara...</p>
       <section id="last-reading" class="last" hidden aria-live="polite">
         <h3>Código leído</h3>
@@ -104,6 +105,7 @@
   const lastFormat = document.getElementById('last-format');
   const count = document.getElementById('count');
   const history = document.getElementById('history');
+  const testSoundButton = document.getElementById('test-sound');
 
   // GitHub Pages aloja únicamente la interfaz. El enlace permanece el mismo.
   // El botón de Administración entrega una vez la URL del servicio Apps Script.
@@ -188,33 +190,56 @@
   let lastSoundCode = '';
   let lastSoundTime = 0;
 
+
   function unlockAudio(){
-    try {
+    try{
+      // iPhone: reproduce avisos aunque esté activado el modo silencio.
+      if(navigator.audioSession && 'type' in navigator.audioSession){
+        navigator.audioSession.type='playback';
+      }
       const AudioCtor=window.AudioContext||window.webkitAudioContext;
-      if(!AudioCtor)return;
-      if(!audioContext) audioContext=new AudioCtor();
-      if(audioContext.state==='suspended') audioContext.resume().catch(()=>{});
-    }catch(e){}
+      if(!AudioCtor)return false;
+      if(!audioContext || audioContext.state==='closed'){
+        audioContext=new AudioCtor();
+      }
+      // Activación sincrónica desde la pulsación del botón, antes de await.
+      const buffer=audioContext.createBuffer(1,1,audioContext.sampleRate);
+      const source=audioContext.createBufferSource();
+      source.buffer=buffer;
+      source.connect(audioContext.destination);
+      source.start(0);
+      source.onended=()=>{try{source.disconnect();}catch(e){}};
+      if(audioContext.state!=='running'){
+        const pending=audioContext.resume();
+        if(pending && typeof pending.catch==='function')pending.catch(()=>{});
+      }
+      return true;
+    }catch(e){return false;}
   }
 
   function soundResult(kind,code){
-    // No repetir el sonido mientras el mismo gafete permanece frente a la cámara.
+    // El mismo gafete no debe producir avisos continuos.
     const now=Date.now();
     if(code===lastSoundCode && now-lastSoundTime<6500)return;
     lastSoundCode=code;
     lastSoundTime=now;
     try{
-      if(!audioContext || audioContext.state!=='running')return;
-      const tones=kind==='ok' ? [[880,0,0.095],[1175,0.135,0.125]]
-                              : [[290,0,0.17],[210,0.19,0.19]];
-      const startTime=audioContext.currentTime+0.02;
+      if(!audioContext || audioContext.state==='closed')return;
+      if(audioContext.state!=='running'){
+        const pending=audioContext.resume();
+        if(pending && typeof pending.catch==='function')pending.catch(()=>{});
+      }
+      // Programar tonos incluso si Safari tarda en reanudar el contexto.
+      const tones=kind==='ok' ? [[850,0,0.13],[1175,0.17,0.15]]
+                              : [[320,0,0.21],[220,0.24,0.24]];
+      const startTime=audioContext.currentTime+0.035;
       for(const [frequency,offset,duration] of tones){
         const oscillator=audioContext.createOscillator();
         const volume=audioContext.createGain();
         oscillator.type=kind==='ok'?'sine':'triangle';
         oscillator.frequency.setValueAtTime(frequency,startTime+offset);
         volume.gain.setValueAtTime(0.0001,startTime+offset);
-        volume.gain.exponentialRampToValueAtTime(0.12,startTime+offset+0.012);
+        volume.gain.exponentialRampToValueAtTime(0.20,startTime+offset+0.015);
         volume.gain.exponentialRampToValueAtTime(0.0001,startTime+offset+duration);
         oscillator.connect(volume);
         volume.connect(audioContext.destination);
@@ -374,6 +399,20 @@
   eventSelect.addEventListener('change',()=>{startButton.disabled=eventSelect.disabled||!eventSelect.value;});
   retryEvents.addEventListener('click',loadRealEvents);
   loadRealEvents();
+  testSoundButton.addEventListener('click',function(){
+    const enabled=unlockAudio();
+    if(!enabled){
+      setStatus('Este navegador no permite reproducir los avisos de sonido.','error');
+      return;
+    }
+    soundResult('ok','prueba-sonido-'+Date.now());
+    setStatus('Sonido de comprobación enviado. Si no lo escuchas, sube el volumen multimedia del iPhone.','ok');
+  });
+  document.addEventListener('visibilitychange',function(){
+    if(!document.hidden && audioContext && audioContext.state!=='running'){
+      try{audioContext.resume().catch(()=>{});}catch(e){}
+    }
+  });
   startButton.addEventListener('click',start);
   backButton.addEventListener('click',back);
   clearButton.addEventListener('click',function(){
