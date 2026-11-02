@@ -64,7 +64,8 @@
       <label for="event-select">Evento</label>
       <select id="event-select" disabled><option value="">Consultando reuniones de Google…</option></select>
       <button id="start-button" class="primary" type="button" disabled>Abrir escáner</button>
-      <p class="muted" id="connection-info">Conectando con las reuniones existentes en Google…</p>
+      <p class="muted" id="connection-info" role="status" aria-live="polite">Conectando con las reuniones existentes en Google…</p>
+      <button id="retry-events" class="secondary" type="button" hidden style="width:100%;margin-top:14px">Reintentar consulta de reuniones</button>
     </section>
 
     <section id="scanner-screen" hidden aria-label="Escáner">
@@ -107,6 +108,7 @@
   // GitHub Pages aloja únicamente la interfaz. El enlace permanece el mismo.
   // El botón de Administración entrega una vez la URL del servicio Apps Script.
   const connectionInfo=document.getElementById('connection-info');
+  const retryEvents=document.getElementById('retry-events');
   const params=new URLSearchParams(location.search);
   let apiUrl=params.get('api')||'';
   const validApi=url=>/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(url);
@@ -159,9 +161,10 @@
     throw new Error('Google no confirmó el registro.');
   }
   async function loadRealEvents(){
-    eventSelect.disabled=true;startButton.disabled=true;
+    eventSelect.disabled=true;startButton.disabled=true;retryEvents.hidden=true;
+    connectionInfo.textContent='Consultando reuniones de Google…';
     try{
-      if(!apiUrl)throw new Error('Para mostrar tus reuniones, abre EscanerCat desde el botón de Administración una vez.');
+      if(!apiUrl)throw new Error('EscanerCat no conoce todavía la dirección de Google. Abre la aplicación de Administración y toca «Escanear asistencias (prueba)». No necesitas contraseña en EscanerCat.');
       const response=await requestJsonp('eventos',randomId());
       if(!response || !response.ok)throw new Error(response?.error||'Google no entregó las reuniones.');
       eventSelect.replaceChildren();
@@ -173,13 +176,16 @@
         item.textContent=String(m.nombre||'Reunión')+' · '+String(m.fecha||'')+' '+String(m.hora||'')+(m.estado==='ACTIVA'?' · Activa':' · '+String(m.estado||''));
         eventSelect.append(item);
       }
-      if(!meetings.length)throw new Error('No se encontraron reuniones creadas en Administración.');
+      if(!meetings.length)throw new Error('Google respondió correctamente, pero la hoja Sesiones no contiene reuniones. Comprueba que el despliegue corresponda a la misma aplicación que usas en Administración.');
       eventSelect.disabled=false;
       connectionInfo.textContent='Se encontraron '+meetings.length+' reuniones reales. Las lecturas se guardan únicamente en Escaner_Pruebas.';
     }catch(e){
       eventSelect.replaceChildren();
-      const option=document.createElement('option');option.value='';option.textContent='No hay reuniones disponibles';eventSelect.append(option);
-      connectionInfo.textContent=e?.message||String(e);
+      const option=document.createElement('option');option.value='';
+      option.textContent='Error al consultar reuniones (ver explicación abajo)';
+      eventSelect.append(option);
+      connectionInfo.textContent='No se han podido consultar las reuniones: '+(e?.message||String(e));
+      retryEvents.hidden=!apiUrl;
     }
   }
   let scanner = null;
@@ -325,6 +331,7 @@
   }
 
   eventSelect.addEventListener('change',()=>{startButton.disabled=eventSelect.disabled||!eventSelect.value;});
+  retryEvents.addEventListener('click',loadRealEvents);
   loadRealEvents();
   startButton.addEventListener('click',start);
   backButton.addEventListener('click',back);
