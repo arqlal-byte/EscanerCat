@@ -229,22 +229,38 @@
         const pending=audioContext.resume();
         if(pending && typeof pending.catch==='function')pending.catch(()=>{});
       }
-      // Programar tonos incluso si Safari tarda en reanudar el contexto.
-      const tones=kind==='ok' ? [[850,0,0.13],[1175,0.17,0.15]]
-                              : [[320,0,0.21],[220,0.24,0.24]];
+      // Avisos intencionadamente notorios: timbre brillante y tres pulsos,
+      // con un sonido de rechazo grave y largo, claramente distinto.
+      // Los picos quedan por debajo de la amplitud máxima de Web Audio.
+      const accepted=kind==='ok';
+      const tones=accepted
+        ? [[880,0,0.19],[1080,0.26,0.19],[1320,0.52,0.27]]
+        : [[480,0,0.32],[350,0.39,0.32],[420,0.79,0.42]];
       const startTime=audioContext.currentTime+0.035;
       for(const [frequency,offset,duration] of tones){
         const oscillator=audioContext.createOscillator();
         const volume=audioContext.createGain();
-        oscillator.type=kind==='ok'?'sine':'triangle';
+        oscillator.type=accepted?'square':'sawtooth';
         oscillator.frequency.setValueAtTime(frequency,startTime+offset);
+        if(!accepted){
+          oscillator.frequency.linearRampToValueAtTime(
+            Math.max(180,frequency-120),startTime+offset+duration
+          );
+        }
         volume.gain.setValueAtTime(0.0001,startTime+offset);
-        volume.gain.exponentialRampToValueAtTime(0.20,startTime+offset+0.015);
-        volume.gain.exponentialRampToValueAtTime(0.0001,startTime+offset+duration);
+        volume.gain.exponentialRampToValueAtTime(
+          accepted?0.48:0.43,startTime+offset+0.025
+        );
+        volume.gain.setValueAtTime(
+          accepted?0.48:0.43,startTime+offset+duration-0.04
+        );
+        volume.gain.exponentialRampToValueAtTime(
+          0.0001,startTime+offset+duration
+        );
         oscillator.connect(volume);
         volume.connect(audioContext.destination);
         oscillator.start(startTime+offset);
-        oscillator.stop(startTime+offset+duration+0.012);
+        oscillator.stop(startTime+offset+duration+0.015);
         oscillator.onended=()=>{oscillator.disconnect();volume.disconnect();};
       }
     }catch(e){}
